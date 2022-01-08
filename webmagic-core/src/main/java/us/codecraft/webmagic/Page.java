@@ -47,6 +47,9 @@ public class Page {
 
     private boolean downloadSuccess = true;
 
+    //页面处理结果，如果设置为false，那么会导致该次请求重试
+    private boolean processSuccess = true;
+
     private byte[] bytes;
 
     private List<Request> targetRequests = new ArrayList<Request>();
@@ -265,5 +268,13 @@ public class Page {
                 ", charset='" + charset + '\'' +
                 ", bytes=" + Arrays.toString(bytes) +
                 '}';
+    }
+
+    public boolean isProcessSuccess() {
+        return processSuccess;
+    }
+
+    public void setProcessSuccess(boolean processSuccess) {
+        this.processSuccess = processSuccess;
     }
 }

@@ -11,6 +11,8 @@ import us.codecraft.webmagic.pipeline.ConsolePipeline;
 import us.codecraft.webmagic.pipeline.Pipeline;
 import us.codecraft.webmagic.pipeline.ResultItemsCollectorPipeline;
 import us.codecraft.webmagic.processor.PageProcessor;
+import us.codecraft.webmagic.proxy.Proxy;
+import us.codecraft.webmagic.proxy.ProxyProvider;
 import us.codecraft.webmagic.scheduler.QueueScheduler;
 import us.codecraft.webmagic.scheduler.Scheduler;
 import us.codecraft.webmagic.thread.CountableThreadPool;
@@ -115,6 +117,8 @@ public class Spider implements Runnable, Task {
      */
     private int limitFrequency = 3000;
 
+    private ProxyProvider proxyProvider;
+
     /**
      * create a spider with pageProcessor.
      *
@@ -216,7 +220,7 @@ public class Spider implements Runnable, Task {
      * @deprecated
      */
     @Deprecated
-	public Spider pipeline(Pipeline pipeline) {
+    public Spider pipeline(Pipeline pipeline) {
         return addPipeline(pipeline);
     }
 
@@ -267,7 +271,7 @@ public class Spider implements Runnable, Task {
      * @deprecated
      */
     @Deprecated
-	public Spider downloader(Downloader downloader) {
+    public Spider downloader(Downloader downloader) {
         return setDownloader(downloader);
     }
 
@@ -441,17 +445,29 @@ public class Spider implements Runnable, Task {
     private void processRequest(Request request) {
         Page page;
         long downloadTime = System.currentTimeMillis();
+        Proxy proxy = proxyProvider != null ? proxyProvider.getProxy(this) : null;
+
         if (null != request.getDownloader()) {
-            page = request.getDownloader().download(request, this);
+            page = request.getDownloader().download(request, this, proxy);
         } else {
-            page = downloader.download(request, this);
+            page = downloader.download(request, this, proxy);
         }
         downloadTime = System.currentTimeMillis() - downloadTime;
         if (page.isDownloadSuccess() && site.getAcceptStatCode().contains(page.getStatusCode())) {
             onDownloadSuccess(request, page, (int) downloadTime);
+            if (!page.isProcessSuccess()) {
+                onDownloaderFail(request);
+                logger.info("page process fail do recycle, page {} ,", request.getUrl());
+            }
         } else {
             onDownloaderFail(request);
+            logger.info("page status code error or download fail, page {} , code: {}", request.getUrl(), page.getStatusCode());
         }
+
+        if (proxyProvider != null && proxy != null) {
+            proxyProvider.returnProxy(proxy, page, this);
+        }
+
     }
 
     /**
@@ -461,21 +477,18 @@ public class Spider implements Runnable, Task {
      */
     private void onDownloadSuccess(Request request, Page page, int downloadTime) {
         ProcessResult processResult = null;
-        if (site.getAcceptStatCode().contains(page.getStatusCode())) {
-            processResult = pageProcessor.processAndStatistic(page);
-            extractAndAddRequests(page, spawnUrl);
-            if (!page.getResultItems().isSkip()) {
-                for (Pipeline pipeline : pipelines) {
-                    pipeline.process(page.getResultItems(), this);
-                }
+
+        processResult = pageProcessor.processAndStatistic(page);
+        extractAndAddRequests(page, spawnUrl);
+        if (!page.getResultItems().isSkip()) {
+            for (Pipeline pipeline : pipelines) {
+                pipeline.process(page.getResultItems(), this);
             }
-        } else {
-            logger.info("page status code error, page {} , code: {}", request.getUrl(), page.getStatusCode());
         }
 
         int sleepTime = -(downloadTime + (processResult == null ? 0 : processResult.useTime));
         //动态确定访问频率
-        int validProxyCount = downloader.proxyIpCount();
+        int validProxyCount = proxyProvider == null ? 0 : proxyProvider.validIpCount();
         if (validProxyCount == -1) {
             sleepTime += site.getSleepTime();
         } else if (validProxyCount == 0) {
@@ -516,7 +529,7 @@ public class Spider implements Runnable, Task {
         try {
             Thread.sleep(time);
         } catch (InterruptedException e) {
-            logger.error("Thread interrupted when sleep",e);
+            logger.error("Thread interrupted when sleep", e);
         }
     }
 
@@ -576,13 +589,13 @@ public class Spider implements Runnable, Task {
      * Download urls synchronizing.
      *
      * @param urls urls
-     * @param <T> type of process result
+     * @param <T>  type of process result
      * @return list downloaded
      */
     public <T> List<T> getAll(Collection<String> urls) {
         destroyWhenExit = false;
         spawnUrl = false;
-        if (startRequests!=null){
+        if (startRequests != null) {
             startRequests.clear();
         }
         for (Request request : UrlUtils.convertToRequests(urls)) {
@@ -625,7 +638,6 @@ public class Spider implements Runnable, Task {
     }
 
     /**
-     *
      * @return isInterrupted
      */
     private boolean waitNewUrl() {
@@ -687,7 +699,7 @@ public class Spider implements Runnable, Task {
      * start with more than one threads
      *
      * @param executorService executorService to run the spider
-     * @param threadNum threadNum
+     * @param threadNum       threadNum
      * @return this
      */
     public Spider thread(ExecutorService executorService, int threadNum) {
@@ -840,9 +852,15 @@ public class Spider implements Runnable, Task {
      * @param emptySleepTime In MILLISECONDS.
      */
     public void setEmptySleepTime(long emptySleepTime) {
-        if(emptySleepTime<=0){
+        if (emptySleepTime <= 0) {
             throw new IllegalArgumentException("emptySleepTime should be more than zero!");
         }
         this.emptySleepTime = emptySleepTime;
+    }
+
+
+    public Spider setProxyProvider(ProxyProvider proxyProvider) {
+        this.proxyProvider = proxyProvider;
+        return this;
     }
 }

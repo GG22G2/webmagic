@@ -70,14 +70,31 @@ public class HttpClientDownloader extends AbstractDownloader {
         return httpClient;
     }
 
+
     @Override
     public Page download(Request request, Task task) {
+        Proxy proxy = proxyProvider != null ? proxyProvider.getProxy(task) : null;
+        Page page = null;
+        try {
+            page = download(request, task, proxy);
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (proxyProvider != null && proxy != null) {
+                proxyProvider.returnProxy(proxy, page, task);
+            }
+        }
+        return page;
+    }
+
+
+    @Override
+    public Page download(Request request, Task task, Proxy proxy) {
         if (task == null || task.getSite() == null) {
             throw new NullPointerException("task or site can not be null");
         }
         CloseableHttpResponse httpResponse = null;
         CloseableHttpClient httpClient = getHttpClient(task.getSite());
-        Proxy proxy = proxyProvider != null ? proxyProvider.getProxy(task) : null;
         HttpClientRequestContext requestContext = httpUriRequestConverter.convert(request, task.getSite(), proxy);
         Page page = Page.fail();
         try {
@@ -94,9 +111,6 @@ public class HttpClientDownloader extends AbstractDownloader {
             if (httpResponse != null) {
                 //ensure the connection is released back to pool
                 EntityUtils.consumeQuietly(httpResponse.getEntity());
-            }
-            if (proxyProvider != null && proxy != null) {
-                proxyProvider.returnProxy(proxy, page, task);
             }
         }
     }

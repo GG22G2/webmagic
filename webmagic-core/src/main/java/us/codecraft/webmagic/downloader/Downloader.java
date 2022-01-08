@@ -3,6 +3,7 @@ package us.codecraft.webmagic.downloader;
 import us.codecraft.webmagic.Page;
 import us.codecraft.webmagic.Request;
 import us.codecraft.webmagic.Task;
+import us.codecraft.webmagic.proxy.Proxy;
 
 /**
  * Downloader is the part that downloads web pages and store in Page object. <br>
@@ -18,25 +19,30 @@ public interface Downloader {
      * Downloads web pages and store in Page object.
      *
      * @param request request
-     * @param task task
+     * @param task    task
      * @return page
      */
-    public Page download(Request request, Task task);
+    Page download(Request request, Task task);
+
+
+    default Page download(Request request, Task task, Proxy proxy) {
+        return download(request, task);
+    }
 
     /**
      * Tell the downloader how many threads the spider used.
+     *
      * @param threadNum number of threads
      */
     public void setThread(int threadNum);
 
     /**
-     *获取可用的代理ip数量
+     * 获取可用的代理ip数量
      *
      * @return -1 代表没使用代理池
-     *          大于等于0  可以代理数
-     *
-     * */
-    public default int proxyIpCount(){
+     * 大于等于0  可以代理数
+     */
+    public default int proxyIpCount() {
         return -1;
     }
 }
