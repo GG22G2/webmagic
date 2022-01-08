@@ -25,7 +25,7 @@ public interface PageProcessor {
      *
      * @param page page
      */
-    public void process(Page page);
+    void process(Page page);
 
     /**
      * process the page, extract urls to fetch, extract the data and store ,并且返回统计信息
@@ -33,7 +33,7 @@ public interface PageProcessor {
      * @param page page
      * @return ProcessResult 处理结果
      */
-    default public ProcessResult processAndStatistic(Page page) {
+    default  ProcessResult processAndStatistic(Page page) {
         long start = System.currentTimeMillis();
         process(page);
         long end = System.currentTimeMillis();
@@ -46,5 +46,8 @@ public interface PageProcessor {
      * @return site
      * @see Site
      */
-    public Site getSite();
+    default Site getSite() {
+        return Site.me();
+    }
+
 }

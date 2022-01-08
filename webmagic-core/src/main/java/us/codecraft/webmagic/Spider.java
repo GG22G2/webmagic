@@ -106,7 +106,7 @@ public class Spider implements Runnable, Task {
 
     private Date startTime;
 
-    private int emptySleepTime = 30000;
+    private long emptySleepTime = 30000;
 
     /**
      * 被爬取网站的接口限制的访问频率，比如百度限制一秒只能访问一次
@@ -216,7 +216,7 @@ public class Spider implements Runnable, Task {
      * @deprecated
      */
     @Deprecated
-    public Spider pipeline(Pipeline pipeline) {
+	public Spider pipeline(Pipeline pipeline) {
         return addPipeline(pipeline);
     }
 
@@ -267,7 +267,7 @@ public class Spider implements Runnable, Task {
      * @deprecated
      */
     @Deprecated
-    public Spider downloader(Downloader downloader) {
+	public Spider downloader(Downloader downloader) {
         return setDownloader(downloader);
     }
 
@@ -313,31 +313,51 @@ public class Spider implements Runnable, Task {
         checkRunningStat();
         initComponent();
         logger.info("Spider {} started!", getUUID());
+        // interrupt won't be necessarily detected
         while (!Thread.currentThread().isInterrupted() && stat.get() == STAT_RUNNING) {
-            final Request request = scheduler.poll(this);
-            if (request == null) {
-                if (threadPool.getThreadAlive() == 0 && exitWhenComplete) {
-                    break;
-                }
-                // wait until new url added
-                waitNewUrl();
-            } else {
-                threadPool.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            processRequest(request);
-                            onSuccess(request);
-                        } catch (Exception e) {
-                            onError(request, e);
-                            logger.error("process request " + request + " error", e);
-                        } finally {
-                            pageCount.incrementAndGet();
-                            signalNewUrl();
+            Request poll = scheduler.poll(this);
+            if (poll == null) {
+                if (threadPool.getThreadAlive() == 0) {
+                    //no alive thread anymore , try again
+                    poll = scheduler.poll(this);
+                    if (poll == null) {
+                        if (exitWhenComplete) {
+                            break;
+                        } else {
+                            // wait
+                            try {
+                                Thread.sleep(emptySleepTime);
+                                continue;
+                            } catch (InterruptedException e) {
+                                break;
+                            }
                         }
                     }
-                });
+                } else {
+                    // wait until new url added，
+                    if (waitNewUrl())
+                        //if interrupted
+                        break;
+                    continue;
+                }
             }
+            final Request request = poll;
+            //this may swallow the interruption
+            threadPool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        processRequest(request);
+                        onSuccess(request);
+                    } catch (Exception e) {
+                        onError(request, e);
+                        logger.error("process request " + request + " error", e);
+                    } finally {
+                        pageCount.incrementAndGet();
+                        signalNewUrl();
+                    }
+                }
+            });
         }
         stat.set(STAT_STOPPED);
         // release some resources
@@ -348,7 +368,6 @@ public class Spider implements Runnable, Task {
     }
 
     /**
-     * @param request Request
      * @deprecated Use {@link #onError(Request, Exception)} instead.
      */
     @Deprecated
@@ -497,7 +516,7 @@ public class Spider implements Runnable, Task {
         try {
             Thread.sleep(time);
         } catch (InterruptedException e) {
-            logger.error("Thread interrupted when sleep", e);
+            logger.error("Thread interrupted when sleep",e);
         }
     }
 
@@ -557,13 +576,13 @@ public class Spider implements Runnable, Task {
      * Download urls synchronizing.
      *
      * @param urls urls
-     * @param <T>  type of process result
+     * @param <T> type of process result
      * @return list downloaded
      */
     public <T> List<T> getAll(Collection<String> urls) {
         destroyWhenExit = false;
         spawnUrl = false;
-        if (startRequests != null) {
+        if (startRequests!=null){
             startRequests.clear();
         }
         for (Request request : UrlUtils.convertToRequests(urls)) {
@@ -605,16 +624,24 @@ public class Spider implements Runnable, Task {
         return this;
     }
 
-    private void waitNewUrl() {
+    /**
+     *
+     * @return isInterrupted
+     */
+    private boolean waitNewUrl() {
+        // now there may not be any thread live
         newUrlLock.lock();
         try {
-            //double check
-            if (threadPool.getThreadAlive() == 0 && exitWhenComplete) {
-                return;
+            //double check，unnecessary, unless very fast concurrent
+            if (threadPool.getThreadAlive() == 0) {
+                return false;
             }
+            //wait for amount of time
             newUrlCondition.await(emptySleepTime, TimeUnit.MILLISECONDS);
+            return false;
         } catch (InterruptedException e) {
-            logger.warn("waitNewUrl - interrupted, error {}", e);
+            // logger.warn("waitNewUrl - interrupted, error {}", e);
+            return true;
         } finally {
             newUrlLock.unlock();
         }
@@ -660,7 +687,7 @@ public class Spider implements Runnable, Task {
      * start with more than one threads
      *
      * @param executorService executorService to run the spider
-     * @param threadNum       threadNum
+     * @param threadNum threadNum
      * @return this
      */
     public Spider thread(ExecutorService executorService, int threadNum) {
@@ -812,7 +839,10 @@ public class Spider implements Runnable, Task {
      *
      * @param emptySleepTime In MILLISECONDS.
      */
-    public void setEmptySleepTime(int emptySleepTime) {
+    public void setEmptySleepTime(long emptySleepTime) {
+        if(emptySleepTime<=0){
+            throw new IllegalArgumentException("emptySleepTime should be more than zero!");
+        }
         this.emptySleepTime = emptySleepTime;
     }
 }
