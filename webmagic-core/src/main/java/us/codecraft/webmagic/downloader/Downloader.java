@@ -28,4 +28,15 @@ public interface Downloader {
      * @param threadNum number of threads
      */
     public void setThread(int threadNum);
+
+    /**
+     *获取可用的代理ip数量
+     *
+     * @return -1 代表没使用代理池
+     *          大于等于0  可以代理数
+     *
+     * */
+    public default int proxyIpCount(){
+        return -1;
+    }
 }

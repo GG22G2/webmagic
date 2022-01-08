@@ -1,6 +1,7 @@
 package us.codecraft.webmagic.processor;
 
 import us.codecraft.webmagic.Page;
+import us.codecraft.webmagic.ProcessResult;
 import us.codecraft.webmagic.Site;
 
 /**
@@ -25,6 +26,19 @@ public interface PageProcessor {
      * @param page page
      */
     public void process(Page page);
+
+    /**
+     * process the page, extract urls to fetch, extract the data and store ,并且返回统计信息
+     *
+     * @param page page
+     * @return ProcessResult 处理结果
+     */
+    default public ProcessResult processAndStatistic(Page page) {
+        long start = System.currentTimeMillis();
+        process(page);
+        long end = System.currentTimeMillis();
+        return new ProcessResult((int) (end - start));
+    }
 
     /**
      * get the site settings

@@ -60,7 +60,7 @@ public class Proxy {
         this.scheme = scheme;
     }
 
-	public String getHost() {
+    public String getHost() {
         return host;
     }
 
@@ -130,6 +130,17 @@ public class Proxy {
     @Override
     public String toString() {
         return this.toURI().toString();
+    }
+
+
+    /**
+     * 检查代理是否可继续使用，每次时候后调用
+     *
+     * @param  fail 使用代理结果
+     * @return true：代理可用 | false：代理应该被丢弃
+     */
+    public boolean checkStatus(boolean fail) {
+        return true;
     }
 
 }

@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.SerializationUtils;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -83,10 +84,10 @@ public class HttpClientDownloader extends AbstractDownloader {
             httpResponse = httpClient.execute(requestContext.getHttpUriRequest(), requestContext.getHttpClientContext());
             page = handleResponse(request, request.getCharset() != null ? request.getCharset() : task.getSite().getCharset(), httpResponse, task);
             onSuccess(request);
-            logger.info("downloading page success {}", request.getUrl());
+            logger.info("downloading page success {} , recycle: {}", request.getUrl(), request.getExtra(Request.CYCLE_TRIED_TIMES));
             return page;
         } catch (IOException e) {
-            logger.warn("download page {} error", request.getUrl(), e);
+            logger.warn("download page error {} ", request.getUrl(), e);
             onError(request);
             return page;
         } finally {
@@ -110,7 +111,7 @@ public class HttpClientDownloader extends AbstractDownloader {
         String contentType = httpResponse.getEntity().getContentType() == null ? "" : httpResponse.getEntity().getContentType().getValue();
         Page page = new Page();
         page.setBytes(bytes);
-        if (!request.isBinaryContent()){
+        if (!request.isBinaryContent()) {
             if (charset == null) {
                 charset = getHtmlCharset(contentType, bytes);
             }
@@ -134,5 +135,10 @@ public class HttpClientDownloader extends AbstractDownloader {
             logger.warn("Charset autodetect failed, use {} as charset. Please specify charset in Site.setCharset()", Charset.defaultCharset());
         }
         return charset;
+    }
+
+    @Override
+    public int proxyIpCount() {
+        return proxyProvider == null ? super.proxyIpCount() : proxyProvider.validIpCount();
     }
 }

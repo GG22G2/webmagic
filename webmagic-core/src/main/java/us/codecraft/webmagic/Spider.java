@@ -109,6 +109,13 @@ public class Spider implements Runnable, Task {
     private int emptySleepTime = 30000;
 
     /**
+     * 被爬取网站的接口限制的访问频率，比如百度限制一秒只能访问一次
+     * <p>
+     * 目前设想，可以统计接口成功率，如果一直成功，则可以适当减少该值
+     */
+    private int limitFrequency = 3000;
+
+    /**
      * create a spider with pageProcessor.
      *
      * @param pageProcessor pageProcessor
@@ -209,7 +216,7 @@ public class Spider implements Runnable, Task {
      * @deprecated
      */
     @Deprecated
-	public Spider pipeline(Pipeline pipeline) {
+    public Spider pipeline(Pipeline pipeline) {
         return addPipeline(pipeline);
     }
 
@@ -260,7 +267,7 @@ public class Spider implements Runnable, Task {
      * @deprecated
      */
     @Deprecated
-	public Spider downloader(Downloader downloader) {
+    public Spider downloader(Downloader downloader) {
         return setDownloader(downloader);
     }
 
@@ -305,7 +312,7 @@ public class Spider implements Runnable, Task {
     public void run() {
         checkRunningStat();
         initComponent();
-        logger.info("Spider {} started!",getUUID());
+        logger.info("Spider {} started!", getUUID());
         while (!Thread.currentThread().isInterrupted() && stat.get() == STAT_RUNNING) {
             final Request request = scheduler.poll(this);
             if (request == null) {
@@ -341,6 +348,7 @@ public class Spider implements Runnable, Task {
     }
 
     /**
+     * @param request Request
      * @deprecated Use {@link #onError(Request, Exception)} instead.
      */
     @Deprecated
@@ -413,21 +421,29 @@ public class Spider implements Runnable, Task {
 
     private void processRequest(Request request) {
         Page page;
-        if (null != request.getDownloader()){
-            page = request.getDownloader().download(request,this);
-        }else {
+        long downloadTime = System.currentTimeMillis();
+        if (null != request.getDownloader()) {
+            page = request.getDownloader().download(request, this);
+        } else {
             page = downloader.download(request, this);
         }
-        if (page.isDownloadSuccess()){
-            onDownloadSuccess(request, page);
+        downloadTime = System.currentTimeMillis() - downloadTime;
+        if (page.isDownloadSuccess() && site.getAcceptStatCode().contains(page.getStatusCode())) {
+            onDownloadSuccess(request, page, (int) downloadTime);
         } else {
             onDownloaderFail(request);
         }
     }
 
-    private void onDownloadSuccess(Request request, Page page) {
-        if (site.getAcceptStatCode().contains(page.getStatusCode())){
-            pageProcessor.process(page);
+    /**
+     * 现在一次执行的耗时包括，下载html，解析和提取html，保存提取结果，睡眠，四部分，
+     * <p>
+     * 将提取html内容和，保存结果两个步奏改成异步请求
+     */
+    private void onDownloadSuccess(Request request, Page page, int downloadTime) {
+        ProcessResult processResult = null;
+        if (site.getAcceptStatCode().contains(page.getStatusCode())) {
+            processResult = pageProcessor.processAndStatistic(page);
             extractAndAddRequests(page, spawnUrl);
             if (!page.getResultItems().isSkip()) {
                 for (Pipeline pipeline : pipelines) {
@@ -437,7 +453,20 @@ public class Spider implements Runnable, Task {
         } else {
             logger.info("page status code error, page {} , code: {}", request.getUrl(), page.getStatusCode());
         }
-        sleep(site.getSleepTime());
+
+        int sleepTime = -(downloadTime + (processResult == null ? 0 : processResult.useTime));
+        //动态确定访问频率
+        int validProxyCount = downloader.proxyIpCount();
+        if (validProxyCount == -1) {
+            sleepTime += site.getSleepTime();
+        } else if (validProxyCount == 0) {
+            sleepTime += limitFrequency * threadNum;
+        } else {
+            sleepTime += threadNum * limitFrequency / validProxyCount;
+        }
+        if (sleepTime > 0) {
+            sleep(sleepTime);
+        }
         return;
     }
 
@@ -468,7 +497,7 @@ public class Spider implements Runnable, Task {
         try {
             Thread.sleep(time);
         } catch (InterruptedException e) {
-            logger.error("Thread interrupted when sleep",e);
+            logger.error("Thread interrupted when sleep", e);
         }
     }
 
@@ -514,16 +543,27 @@ public class Spider implements Runnable, Task {
     }
 
     /**
+     * 设置限制访问频率，对单一ip来说. <br>
+     *
+     * @param limitFrequency 限制访问频率  单位：毫秒
+     * @return this
+     */
+    public Spider limitFrequency(int limitFrequency) {
+        this.limitFrequency = limitFrequency;
+        return this;
+    }
+
+    /**
      * Download urls synchronizing.
      *
      * @param urls urls
-     * @param <T> type of process result
+     * @param <T>  type of process result
      * @return list downloaded
      */
     public <T> List<T> getAll(Collection<String> urls) {
         destroyWhenExit = false;
         spawnUrl = false;
-        if (startRequests!=null){
+        if (startRequests != null) {
             startRequests.clear();
         }
         for (Request request : UrlUtils.convertToRequests(urls)) {
@@ -620,7 +660,7 @@ public class Spider implements Runnable, Task {
      * start with more than one threads
      *
      * @param executorService executorService to run the spider
-     * @param threadNum threadNum
+     * @param threadNum       threadNum
      * @return this
      */
     public Spider thread(ExecutorService executorService, int threadNum) {

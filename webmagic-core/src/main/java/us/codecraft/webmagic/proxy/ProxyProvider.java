@@ -26,4 +26,12 @@ public interface ProxyProvider {
      */
     Proxy getProxy(Task task);
 
+    /**
+     * 有效ip数
+     * @return 有效ip数
+     * */
+   default int validIpCount(){
+       return  0;
+   }
+
 }

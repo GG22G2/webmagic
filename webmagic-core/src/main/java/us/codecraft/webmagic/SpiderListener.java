@@ -11,6 +11,7 @@ public interface SpiderListener {
     public void onSuccess(Request request);
 
     /**
+     * @param request Request
      * @deprecated Use {@link #onError(Request, Exception)} instead.
      */
     @Deprecated

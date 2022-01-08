@@ -12,6 +12,7 @@ import java.util.List;
  * @author code4crafer@gmail.com
  */
 public class AmanzonPageProcessor implements PageProcessor{
+    @Override
     public void process(Page page) {
 
         Html html = page.getHtml();
